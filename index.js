@@ -4,8 +4,8 @@ const errors = require('./src/errors');
 
 const Bus = require('./src/Bus');
 const Container = require('./src/Container');
-
-// TODO Also export base Provider class, Registrar etc. maybe?
+const Provider = require('./src/Container/Provider');
+// No need for registrar
 
 // TODO Returned object will be called as 'app', \
 //      so export something can act like one.
@@ -63,11 +63,25 @@ class Kernel {
     //
 
     // TODO DOC This return (the `app`) MUST be passed to the providers.
-    return {
-      bus: this._bus,
-      container: this._container,
+    const app = {
+      /* bus: this._bus, */
+      on: this._bus.addEventListener.bind(this._bus),
+      // TODO `once`
+      emit: this._bus.dispatch.bind(this._bus),
+      // TODO `off`
+      //
+      /* container: this._container, */
+      register: this._container.bind.bind(this._container), // hi-hi :)
+      resolve: this._container.make.bind(this._container),
+      //
       ...this._ctx,
+      //
+      Provider,
     };
+
+    //
+
+    return app;
   }
 
   //

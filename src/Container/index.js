@@ -28,8 +28,8 @@ const debug = require('debug')('caribou:Container');
 const requireStack = require('require-stack');
 const _ = require('lodash'); // FIXME Get rid off 'lodash' dependency by embracing ES6 features.
 /* const GE = require('@adonisjs/generic-exceptions'); */
-const InvalidArgumentException = require('./errors/InvalidArgument');
-const RuntimeException = require('./errors/Runtime');
+const InvalidArgumentException = require('../errors/InvalidArgument');
+const RuntimeException = require('../errors/Runtime');
 
 const isClass = fn =>
   (typeof (fn) === 'function' && /^class\s/.test(Function.prototype.toString.call(fn)));
