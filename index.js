@@ -13,6 +13,9 @@ const Container = require('./src/Container');
 /* const Provider = require('./src/Container/Provider'); */
 // No need for registrar
 
+// TODO Get providers array (consists of objects of `register` and/or `boot` methods) by paths array (absolute or root relative) \
+//      Use it in ctor
+
 // TODO Returned object will be called as 'app', \
 //      so export something can act like one.
 class Kernel {
@@ -37,7 +40,7 @@ class Kernel {
 
         if (typeof exports === 'object') {
           if (Array.isArray(exports)) {
-            // TODO
+            // TODO get filename of export
           } else {
             /* const imports = {}; // This SHOULD be sorted array */
             const imports = new SortedArray([], (lhs, rhs) => {
@@ -69,24 +72,7 @@ class Kernel {
               } */
             });
 
-            // TODO Convert the array to object before sending it
-            const importsObj = {};
-            imports.array.forEach((imported) => {
-              importsObj[imported.name] = {};
-
-              // Only include certain things (e.g. `register` and `boot` functions)
-              //
-              if (imported.register && typeof imported.register === 'function') {
-                importsObj[imported.name]['register'] = imported.register;
-              }
-
-              if (imported.boot && typeof imported.boot === 'function') {
-                importsObj[imported.name]['boot'] = imported.boot;
-              }
-            });
-
-            this._providers = importsObj;
-            /* this._providers = imports; */
+            this._providers = imports.array;
           }
         }
       }
@@ -119,7 +105,30 @@ class Kernel {
     if (!this._providers) {
       const providersObj = (require('./src/importDir'))(this._paths.providers); // eslint-disable-line
 
-      this._providers = providersObj;
+      // NOTE What the code does below?
+      /* const providers = new SortedArray([], (lhs, rhs) => {
+        /* if (lhs.priority && rhs.priority) {
+          return (lhs.priority - rhs.priority);
+        }
+
+        return lhs.name
+          ? lhs.name.localeCompare((rhs.name ? rhs.name : ''))
+          : 1; *
+
+        if (lhs[1].priority && rhs[1].priority) {
+          return (lhs[1].priority - rhs[1].priority);
+        }
+
+        return lhs[0]
+          ? lhs[0].localeCompare((rhs[0] ? rhs[0] : ''))
+          : 1;
+      }); */
+      const providers = [];
+      Object.entries(providersObj).forEach((provider) => {
+        /* providers.insert(provider); */
+        providers.push(provider);
+      });
+      this._providers = providers.array; // This one (`this._providers`) MUST be an array
     }
 
     //
@@ -138,14 +147,19 @@ class Kernel {
     const selfKernelInst = this;
 
     // TODO Register providers by the 'registrar'
-    Object.entries(this._providers) // [x][0] = name (e.g. 'Test1'), [x][1] = its export obj (i.e. has `register` and maybe `boot`)
+    /* Object.entries(this._providers) // [x][0] = name (e.g. 'Test1'), [x][1] = its export obj (i.e. has `register` and maybe `boot`)
       .filter((provider) => {
         return (typeof provider[1].register === 'function');
       })
-      /* .filter((provider) => (typeof provider[1].register === 'function')) */
+      /* .filter((provider) => (typeof provider[1].register === 'function')) *
       .forEach(([name, provider]) => {
-        provider.register(/* selfKernelInst */ providerCtx);
+        provider.register(/* selfKernelInst * providerCtx);
         // NOTE Handle provider register return value here
+      }); */
+    this._providers
+      .filter(provider => (typeof provider[1].register === 'function'))
+      .forEach((provider) => {
+        console.log(provider);
       });
     // See https://github.com/poppinss/adonis-fold/blob/develop/src/Registrar/index.js
     // See https://github.com/adonisjs/adonis-framework/blob/1b72f83f806e48c5068b7fc1f3b2e388ef4b1a60/test/integration/setup.js#L18
@@ -158,18 +172,23 @@ class Kernel {
     // TODO See 'src/Container/Registrar:200'
     const selfKernelInst = this;
     let currProviderRet = null;
-    Object.entries(this._providers) // [x][0] = name (e.g. 'Test1'), [x][1] = its export obj (i.e. has `register` and maybe `boot`)
+    /* Object.entries(this._providers) // [x][0] = name (e.g. 'Test1'), [x][1] = its export obj (i.e. has `register` and maybe `boot`)
       .filter((provider) => {
         return (typeof provider[1].boot === 'function');
       })
-      /* .filter((provider) => (typeof provider[1].boot === 'function')) */
+      /* .filter((provider) => (typeof provider[1].boot === 'function')) *
       .forEach(([name, provider]) => {
-        currProviderRet = provider.boot(/* selfKernelInst */ selfKernelInst._providerCtx);
+        currProviderRet = provider.boot(/* selfKernelInst * selfKernelInst._providerCtx);
 
         if (currProviderRet) {
           selfKernelInst._ctx[name.toLowerCase()] = currProviderRet;
         }
-      });
+      }); */
+      this._providers
+        .filter(provider => (typeof provider[1].boot === 'function'))
+        .forEach((provider) => {
+          console.log(provider);
+        });
 
     // TODO DOC This return (the `app`) MUST be passed to the providers.
     const app = {
