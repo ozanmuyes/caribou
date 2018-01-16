@@ -1,21 +1,97 @@
-const debug = require('debug')('caribou');
+// TODO See the screenshots on the phone
 
+const fs = require('fs');
+
+const debug = require('debug')('caribou');
+const SortedArray = require('sorted-array');
+
+const importDir = require('./src/importDir');
 const errors = require('./src/errors');
 
 const Bus = require('./src/Bus');
 const Container = require('./src/Container');
-const Provider = require('./src/Container/Provider');
+/* const Provider = require('./src/Container/Provider'); */
 // No need for registrar
 
 // TODO Returned object will be called as 'app', \
 //      so export something can act like one.
 class Kernel {
-  constructor(rootPath) {
+  constructor(paths) {
+    this._id = Math.floor(Math.random() * 99999);
+    console.log(`ID: ${this._id}`);
+
     /**
      * Absolute path to project root (where
      * the 'package.json') file stays.
      */
-    this._rootPath = rootPath;
+    this._paths = paths;
+
+    let _config;
+    // TODO Import config path with its contents somewhere near here
+    if (paths.config) {
+      // TODO Ses kaydını dinle
+      const filePath = `${paths.config}/providers.js`;
+
+      if (fs.existsSync(filePath)) {
+        const exports = require(filePath); // eslint-disable-line
+
+        if (typeof exports === 'object') {
+          if (Array.isArray(exports)) {
+            // TODO
+          } else {
+            /* const imports = {}; // This SHOULD be sorted array */
+            const imports = new SortedArray([], (lhs, rhs) => {
+              if (lhs.priority && rhs.priority) {
+                return (lhs.priority - rhs.priority);
+              }
+
+              return lhs.name
+                ? lhs.name.localeCompare((rhs.name ? rhs.name : ''))
+                : 1
+            });
+
+            let imported = null;
+            Object.entries(exports).forEach((exported) => {
+              imported = require(exported[1]);
+              /* if (!imported.name) {
+                imported.name = exported[0];
+              } */
+              /* imports[(imported.name ? imported.name : exported[0])] = imported; */
+              imports.insert({
+                name: exported[0], // TODO ???
+                ...imported,
+              });
+
+              /* if (imported.name) {
+                imports[imported.name] = imported;
+              } else {
+                imports[exported[0]] = imported;
+              } */
+            });
+
+            // TODO Convert the array to object before sending it
+            const importsObj = {};
+            imports.array.forEach((imported) => {
+              importsObj[imported.name] = {};
+
+              // Only include certain things (e.g. `register` and `boot` functions)
+              //
+              if (imported.register && typeof imported.register === 'function') {
+                importsObj[imported.name]['register'] = imported.register;
+              }
+
+              if (imported.boot && typeof imported.boot === 'function') {
+                importsObj[imported.name]['boot'] = imported.boot;
+              }
+            });
+
+            this._providers = importsObj;
+            /* this._providers = imports; */
+          }
+        }
+      }
+    }
+    const config = _config;
 
     // TODO Export something related with this,
     //      the "context of the kernel.". The
@@ -30,10 +106,7 @@ class Kernel {
     /**
      * TODO Use the function above by;
      * `
-     *  // TODO `bootstrap` function MAY be called a context \
-     *  //      (the initial app context), which the kernel \
-     *  //      will append.
-     *  const app = (new Kernel('./app')).bootstrap(ctx);
+     *  const app = (new Kernel('./app')).boot();
      * `
      */
 
@@ -43,24 +116,60 @@ class Kernel {
     const bus = new Bus(ctx);
     const container = new Container(ctx);
 
-    //
+    if (!this._providers) {
+      const providersObj = (require('./src/importDir'))(this._paths.providers); // eslint-disable-line
 
-    this._ctx = ctx;
-    this._bus = bus;
-    this._container = container;
-  }
-
-  // TODO Test this function
-  bootstrap(baseCtx = null) {
-    //
-
-    if (typeof baseCtx !== 'undefined' && baseCtx !== null) {
-      // The context defined here MAY overwrite the base's.
-      // TODO DOC Users MUST be warned.
-      this._ctx = Object.assign({}, baseCtx, this._ctx);
+      this._providers = providersObj;
     }
 
     //
+
+    this._config = config;
+    this._ctx = ctx;
+    this._bus = bus;
+    this._container = container;
+    /* this._providers = providersObj; */
+    const providerCtx = {
+      container: this._container,
+      config: this._config,
+    };
+    this._providerCtx = providerCtx;
+
+    const selfKernelInst = this;
+
+    // TODO Register providers by the 'registrar'
+    Object.entries(this._providers) // [x][0] = name (e.g. 'Test1'), [x][1] = its export obj (i.e. has `register` and maybe `boot`)
+      .filter((provider) => {
+        return (typeof provider[1].register === 'function');
+      })
+      /* .filter((provider) => (typeof provider[1].register === 'function')) */
+      .forEach(([name, provider]) => {
+        provider.register(/* selfKernelInst */ providerCtx);
+        // NOTE Handle provider register return value here
+      });
+    // See https://github.com/poppinss/adonis-fold/blob/develop/src/Registrar/index.js
+    // See https://github.com/adonisjs/adonis-framework/blob/1b72f83f806e48c5068b7fc1f3b2e388ef4b1a60/test/integration/setup.js#L18
+  }
+
+  // TODO Test this function
+  boot() {
+    this._bus.dispatch.call(this._bus, 'beforeBoot');
+
+    // TODO See 'src/Container/Registrar:200'
+    const selfKernelInst = this;
+    let currProviderRet = null;
+    Object.entries(this._providers) // [x][0] = name (e.g. 'Test1'), [x][1] = its export obj (i.e. has `register` and maybe `boot`)
+      .filter((provider) => {
+        return (typeof provider[1].boot === 'function');
+      })
+      /* .filter((provider) => (typeof provider[1].boot === 'function')) */
+      .forEach(([name, provider]) => {
+        currProviderRet = provider.boot(/* selfKernelInst */ selfKernelInst._providerCtx);
+
+        if (currProviderRet) {
+          selfKernelInst._ctx[name.toLowerCase()] = currProviderRet;
+        }
+      });
 
     // TODO DOC This return (the `app`) MUST be passed to the providers.
     const app = {
@@ -71,17 +180,49 @@ class Kernel {
       // TODO `off`
       //
       /* container: this._container, */
-      register: this._container.bind.bind(this._container), // hi-hi :)
+      // NOTE Its not advised to use `register' function outside
+      //      outside of the kernel - in other words register
+      //      things with the container only by providers.
+      // If the last argument is a boolean, it will be treated as
+      // 'isSingleton', and if true then the
+      register: (...args) => {
+        const lastArg = (args.length ? args[args.length - 1] : null);
+
+        if (typeof lastArg === 'boolean') {
+          const filteredArgs = args.slice(0, -1);
+
+          if (lastArg) {
+            // singleton
+            return this._container.singleton(...filteredArgs);
+          } else {
+            // normal register (`bind`)
+            return this._container.bind(...filteredArgs);
+          }
+        } else {
+          /* // default - singleton
+          return this._container.singleton(...args); */
+
+          // default - bind
+          return this._container.bind(...args);
+        }
+      },
       resolve: this._container.make.bind(this._container),
+
       //
       ...this._ctx,
       //
-      Provider,
+      /* Provider, */
     };
 
     //
 
+    this._bus.dispatch.call(this._bus, 'afterBoot', app);
+
     return app;
+  }
+
+  on(...args) {
+    this._bus.addEventListener.apply(this._bus, args);
   }
 
   //
@@ -98,4 +239,8 @@ export {
   //      the bus and the container, since they
   //      are instantiated by the class.
 }; */
-module.exports = Kernel;
+module.exports = {
+  Kernel,
+  /* Provider, */
+  //
+};

@@ -26,7 +26,9 @@
     "debug": "^3.1.0",
     "lodash": "^4.17.4",
     "node-exceptions": "^3.0.0",
+    "require-directory": "^2.1.1",
     "require-stack": "^1.0.2",
+    "sorted-array": "^2.0.1",
     "upcast": "^2.1.1"
   }
 }
