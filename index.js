@@ -103,6 +103,7 @@ class Kernel {
     const container = new Container(ctx);
 
     if (!this._providers) {
+      // Since providers array
       const providersObj = (require('./src/importDir'))(this._paths.providers); // eslint-disable-line
 
       // NOTE What the code does below?
@@ -128,7 +129,7 @@ class Kernel {
         /* providers.insert(provider); */
         providers.push(provider);
       });
-      this._providers = providers.array; // This one (`this._providers`) MUST be an array
+      this._providers = providers/* .array */; // This one (`this._providers`) MUST be an array
     }
 
     //
@@ -146,7 +147,7 @@ class Kernel {
 
     const selfKernelInst = this;
 
-    // TODO Register providers by the 'registrar'
+    // -TODO Register providers by the 'registrar' // Do NOT use a registrar
     /* Object.entries(this._providers) // [x][0] = name (e.g. 'Test1'), [x][1] = its export obj (i.e. has `register` and maybe `boot`)
       .filter((provider) => {
         return (typeof provider[1].register === 'function');
@@ -258,8 +259,9 @@ export {
   //      the bus and the container, since they
   //      are instantiated by the class.
 }; */
-module.exports = {
+/* module.exports = { // [XPRTJSTTHKRNL]: export just the kernel
   Kernel,
-  /* Provider, */
+  /* Provider, *
   //
-};
+}; */
+module.exports = Kernel; // [XPRTJSTTHKRNL]
