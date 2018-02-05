@@ -1,6 +1,7 @@
 // TODO See the screenshots on the phone
 
 const fs = require('fs');
+const path = require('path');
 
 const debug = require('debug')('caribou');
 const SortedArray = require('sorted-array');
@@ -16,10 +17,80 @@ const Container = require('./src/Container');
 // TODO Get providers array (consists of objects of `register` and/or `boot` methods) by paths array (absolute or root relative) \
 //      Use it in ctor
 
+// EXPERIMENTAL - STA
+// See https://stackoverflow.com/a/13227808/250453
+function getCaller(delta = 0) {
+  const stack = getStack();
+
+  // Return caller's caller
+  // 0 is this fn,
+  // 1 is this fn's caller (Kernel ctor),
+  // 2 is this fn's caller's caller (actual caller of the Kernel ctor)
+  return stack[2 + delta];
+}
+
+function getStack() {
+  // Save original Error.prepareStackTrace
+  const origPrepareStackTrace = Error.prepareStackTrace;
+
+  // Override with function that just returns `stack`
+  Error.prepareStackTrace = (_, stack) => stack;
+
+  // Create a new `Error`, which automatically gets `stack`
+  var err = new Error();
+
+  // Evaluate `err.stack`, which calls our new `Error.prepareStackTrace`
+  var stack = err.stack;
+
+  // Restore original `Error.prepareStackTrace`
+  Error.prepareStackTrace = origPrepareStackTrace;
+
+  // Remove superfluous function call on stack
+  stack.shift() ;// getStack --> Error
+
+  return stack;
+}
+// EXPERIMENTAL - FIN
+// Just as in the passed 'paths' parameter we can use relative
+// paths, the relative paths relative to the 'root' path.
+const defaultPaths = {
+  /* config: './config', */
+  /* providers: './src/providers', */
+  //
+};
+function processPaths(rootPath, paths) {
+  const processedPaths = {};
+
+  if (rootPath.length === 0) {
+    // Get root path from (ctor's) caller
+    processedPaths.root = path.dirname(getCaller(1).getFileName());
+  } else {
+    // TODO Check if the given path is absolute
+    if (!path.isAbsolute(rootPath)) {
+      throw new Error('Root path MUST be absolute when given.');
+    }
+
+    processedPaths.root = rootPath;
+  }
+
+  const mergedPaths = Object.assign({}, defaultPaths, paths);
+  let currPath = '';
+  Object.keys(mergedPaths).forEach((key) => {
+    currPath = mergedPaths[key];
+
+    if (currPath.startsWith('./')) {
+      processedPaths[key] = path.join(processedPaths.root, currPath);
+    }
+  });
+
+  return processedPaths;
+}
+
 // TODO Returned object will be called as 'app', \
 //      so export something can act like one.
 class Kernel {
-  constructor(paths) {
+  // `rootPath` MUST be an absolute path when passed
+  constructor(paths, rootPath = '') {
     this._id = Math.floor(Math.random() * 99999);
     console.log(`ID: ${this._id}`);
 
@@ -27,13 +98,14 @@ class Kernel {
      * Absolute path to project root (where
      * the 'package.json') file stays.
      */
-    this._paths = paths;
+    this._paths = processPaths(rootPath, paths);
 
     let _config;
     // TODO Import config path with its contents somewhere near here
-    if (paths.config) {
-      // TODO Ses kaydını dinle
-      const filePath = `${paths.config}/providers.js`;
+    if (this._paths.config) {
+      _config = (require('./src/importDir'))(this._paths.config);
+      /* // TODO Ses kaydını dinle
+      const filePath = `${this._paths.config}/providers.js`;
 
       if (fs.existsSync(filePath)) {
         const exports = require(filePath); // eslint-disable-line
@@ -42,7 +114,7 @@ class Kernel {
           if (Array.isArray(exports)) {
             // TODO get filename of export
           } else {
-            /* const imports = {}; // This SHOULD be sorted array */
+            /* const imports = {}; // This SHOULD be sorted array *
             const imports = new SortedArray([], (lhs, rhs) => {
               if (lhs.priority && rhs.priority) {
                 return (lhs.priority - rhs.priority);
@@ -58,8 +130,8 @@ class Kernel {
               imported = require(exported[1]);
               /* if (!imported.name) {
                 imported.name = exported[0];
-              } */
-              /* imports[(imported.name ? imported.name : exported[0])] = imported; */
+              } *
+              /* imports[(imported.name ? imported.name : exported[0])] = imported; *
               imports.insert({
                 name: exported[0], // TODO ???
                 ...imported,
@@ -69,13 +141,13 @@ class Kernel {
                 imports[imported.name] = imported;
               } else {
                 imports[exported[0]] = imported;
-              } */
+              } *
             });
 
             this._providers = imports.array;
           }
         }
-      }
+      } */
     }
     const config = _config;
 
@@ -103,8 +175,16 @@ class Kernel {
     const container = new Container(ctx);
 
     if (!this._providers) {
-      // Since providers array
-      const providersObj = (require('./src/importDir'))(this._paths.providers); // eslint-disable-line
+      let providersObj;
+
+      if (this._paths.providers) {
+        // Since providers array
+        providersObj = (require('./src/importDir'))(this._paths.providers); // eslint-disable-line
+
+        // TODO Do sorting here, considering priority
+      } else if (_config.providers) {
+        providersObj = _config.providers;
+      }
 
       // NOTE What the code does below?
       /* const providers = new SortedArray([], (lhs, rhs) => {
@@ -158,7 +238,10 @@ class Kernel {
         // NOTE Handle provider register return value here
       }); */
     this._providers
-      .filter(provider => (typeof provider[1].register === 'function'))
+      /* .filter(provider => (typeof provider[1].register === 'function')) */
+      .filter((provider) => {
+        return (typeof provider[1].register === 'function');
+      })
       .forEach((provider) => {
         console.log(provider);
       });
@@ -173,23 +256,23 @@ class Kernel {
     // TODO See 'src/Container/Registrar:200'
     const selfKernelInst = this;
     let currProviderRet = null;
-    /* Object.entries(this._providers) // [x][0] = name (e.g. 'Test1'), [x][1] = its export obj (i.e. has `register` and maybe `boot`)
+    Object.entries(this._providers) // [x][0] = name (e.g. 'Test1'), [x][1] = its export obj (i.e. has `register` and maybe `boot`)
       .filter((provider) => {
         return (typeof provider[1].boot === 'function');
       })
-      /* .filter((provider) => (typeof provider[1].boot === 'function')) *
+      /* .filter((provider) => (typeof provider[1].boot === 'function')) */
       .forEach(([name, provider]) => {
-        currProviderRet = provider.boot(/* selfKernelInst * selfKernelInst._providerCtx);
+        currProviderRet = provider.boot(/* selfKernelInst */ selfKernelInst._providerCtx);
 
         if (currProviderRet) {
           selfKernelInst._ctx[name.toLowerCase()] = currProviderRet;
         }
-      }); */
-      this._providers
+      });
+      /* this._providers
         .filter(provider => (typeof provider[1].boot === 'function'))
         .forEach((provider) => {
           console.log(provider);
-        });
+        }); */
 
     // TODO DOC This return (the `app`) MUST be passed to the providers.
     const app = {
